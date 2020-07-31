@@ -1,3 +1,5 @@
+pub mod codec;
+
 use serde::{Serialize, Deserialize};
 use anyhow::*;
 use bincode::Options;
@@ -141,4 +143,8 @@ fn test_header() {
   println!("header: {:x?}", h);
   assert_eq!(h.header_size as usize, Header::fixed_size() + 4*h.level_count as usize);
   assert!(h.check_crc(&buffer));
+
+  let table = h.get_table_data(&buffer);
+  let mut codec = codec::Codec::new(table);
+  println!("{:?}", codec.decode());
 }
