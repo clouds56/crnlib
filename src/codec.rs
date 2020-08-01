@@ -66,7 +66,7 @@ impl Codec<'_> {
     let mut i = 0;
     let mut last = None;
     while i < symbol_count {
-      let (len, d) = match key.next(self) {
+      let (len, d) = match key.next(self).context("get key content")? {
         Depth(d) => (1, d),
         ShortZero => (self.read_bits(3)? + 3, 0),
         LongZero => (self.read_bits(7)? + 11, 0),
@@ -155,13 +155,14 @@ impl<T: Ord+Copy> Huffman<T> {
     })
   }
 
-  pub fn next(&self, codec: &mut Codec<'_>) -> T {
+  pub fn next(&self, codec: &mut Codec<'_>) -> Result<T, Error> {
+    ensure!(codec.current() < codec.len(), "stream end {} >= {}", codec.current(), codec.len());
     let k = codec.look_bits(self.max_depth) as u32;
     for i in 1..=self.max_depth {
       let t = k >> (self.max_depth - i);
       if let Some(sym) = self.symbol_rev.get(&(i, t)) {
         codec.index += i;
-        return *sym
+        return Ok(*sym)
       }
     }
     unreachable!("complete huffman tree mut match");
