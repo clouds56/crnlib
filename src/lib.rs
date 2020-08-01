@@ -4,6 +4,8 @@ use serde::{Serialize, Deserialize};
 use anyhow::*;
 use bincode::Options;
 
+type Huffman = codec::Huffman<u32>;
+
 #[derive(Debug, Copy, Clone, serde_repr::Serialize_repr, serde_repr::Deserialize_repr)]
 #[repr(u8)]
 pub enum Format {
@@ -122,13 +124,39 @@ impl Header {
     Some(&input[start..end])
   }
 
-  pub fn get_table_data<'a>(&self, input: &'a [u8]) -> &'a [u8] {
+  fn get_table_data<'a>(&self, input: &'a [u8]) -> &'a [u8] {
     let start = self.table_offset as usize;
     let end = start + self.table_size as usize;
     &input[start..end]
   }
+
+  pub fn get_table<'a>(&self, input: &'a [u8]) -> Result<Tables, Error> {
+    let mut codec = codec::Codec::new(self.get_table_data(input));
+    let chunk = codec.decode().context("read chunk table")?;
+    let color_endpoint = if self.color_endpoints.count != 0 {
+      codec.decode().context("read color_endpoint table")?.into()
+    } else { None };
+    let color_selector = if self.color_selectors.count != 0 {
+      codec.decode().context("read color_selector table")?.into()
+    } else { None };
+    let alpha_endpoint = if self.alpha_endpoints.count != 0 {
+      codec.decode().context("read alpha_endpoint table")?.into()
+    } else { None };
+    let alpha_selector = if self.alpha_selectors.count != 0 {
+      codec.decode().context("read alpha_selector table")?.into()
+    } else { None };
+    Ok(Tables { chunk, color_endpoint, color_selector, alpha_endpoint, alpha_selector })
+  }
 }
 
+#[derive(Debug)]
+pub struct Tables {
+  pub chunk: Huffman,
+  pub color_endpoint: Option<Huffman>,
+  pub color_selector: Option<Huffman>,
+  pub alpha_endpoint: Option<Huffman>,
+  pub alpha_selector: Option<Huffman>,
+}
 
 #[test]
 fn test_header() {
@@ -144,7 +172,6 @@ fn test_header() {
   assert_eq!(h.header_size as usize, Header::fixed_size() + 4*h.level_count as usize);
   assert!(h.check_crc(&buffer));
 
-  let table = h.get_table_data(&buffer);
-  let mut codec = codec::Codec::new(table);
-  println!("{:?}", codec.decode());
+  let table = h.get_table(&buffer).expect("read table");
+  // println!("table: {:?}", table);
 }

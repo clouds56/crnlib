@@ -25,6 +25,9 @@ impl Codec<'_> {
   pub fn skip_bits(&mut self, n: usize) {
     self.index += n;
   }
+  pub fn current(&self) -> usize {
+    self.index
+  }
 
   pub fn decode(&mut self) -> Result<Huffman<u32>, Error> {
     let symbol_count = self.read_bits(Huffman::<()>::MAX_SYMBOL_COUNT_BIT) as u32;
@@ -37,8 +40,8 @@ impl Codec<'_> {
         tmp_symbol_depth.insert(Key::SHUFFLE[i], value);
       }
     }
-    let key = Huffman::new(tmp_symbol_depth);
-    println!("tmp_symbol_depth: {:?}", key);
+    let key = Huffman::new(tmp_symbol_depth).context("get key huffman")?;
+    // println!("tmp_symbol_depth: {:?}", key);
     let mut symbol_depth = BTreeMap::new();
     let mut i = 0;
     let mut last = None;
@@ -58,7 +61,8 @@ impl Codec<'_> {
       }
       i += len as u32;
     }
-    Ok(Huffman::new(symbol_depth))
+    // println!("{:?}", symbol_depth);
+    Huffman::new(symbol_depth)
   }
 }
 
@@ -89,12 +93,12 @@ pub struct Huffman<T> {
   depth_bound: [u32; Key::MAX_DEPTH+1],
   symbol_depth: BTreeMap<T, usize>,
   symbols: BTreeMap<T, u32>,
-  symbol_rev: BTreeMap<u32, T>,
+  symbol_rev: BTreeMap<(usize, u32), T>,
   max_depth: usize,
 }
 
 impl<T: Ord+Copy> Huffman<T> {
-  pub fn new(symbol_depth: BTreeMap<T, usize>) -> Self {
+  pub fn new(symbol_depth: BTreeMap<T, usize>) -> Result<Self, Error> {
     let mut depth_count = [0; Key::MAX_DEPTH+1];
     for &depth in symbol_depth.values() {
       depth_count[depth] += 1;
@@ -112,7 +116,7 @@ impl<T: Ord+Copy> Huffman<T> {
       }
       depth_bound[depth] = available;
     }
-    assert_eq!(1<<max_depth, depth_bound[max_depth]);
+    ensure!(1<<max_depth == depth_bound[max_depth], "depth_bound error: {:?} {:?}", depth_count, depth_bound);
     let mut depth_current = [0; Key::MAX_DEPTH+1];
     for i in 1..=Key::MAX_DEPTH {
       depth_current[i] = depth_bound[i-1]*2;
@@ -123,19 +127,19 @@ impl<T: Ord+Copy> Huffman<T> {
       depth_current[depth] += 1;
       Some((key, result))
     }).collect();
-    let symbol_rev = symbols.iter().map(|(&k, &v)| (v, k)).collect();
-    Self {
+    let symbol_rev = symbols.iter().map(|(&k, &v)| ((symbol_depth[&k], v), k)).collect();
+    Ok(Self {
       depth_count, symbol_depth,
       max_depth, depth_bound,
       symbols, symbol_rev,
-    }
+    })
   }
 
   pub fn next(&self, codec: &mut Codec<'_>) -> T {
     let k = codec.look_bits(self.max_depth) as u32;
     for i in 1..=self.max_depth {
       let t = k >> (self.max_depth - i);
-      if let Some(sym) = self.symbol_rev.get(&t) {
+      if let Some(sym) = self.symbol_rev.get(&(i, t)) {
         codec.index += i;
         return *sym
       }
