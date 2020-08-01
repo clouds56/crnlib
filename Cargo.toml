@@ -12,4 +12,5 @@ serde = { version = "*", features = [ "derive" ] }
 serde_repr = "*"
 bincode = "*"
 # crc = "*"
+bitvec = "*"
 anyhow = "*"

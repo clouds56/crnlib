@@ -1,48 +1,63 @@
 use std::collections::BTreeMap;
+use bitvec::{slice::BitSlice, order::Msb0, fields::BitField};
 use anyhow::*;
 
 pub struct Codec<'a> {
-  buffer: &'a [u8],
-  current_byte: usize,
-  bits: u8,
-  remain: usize,
+  buffer: &'a BitSlice<Msb0, u8>,
+  index: usize,
 }
 
 impl Codec<'_> {
   pub fn new<'a>(input: &'a [u8]) -> Codec<'a> {
-    Codec { buffer: input, current_byte: 0, bits: 0, remain: 0 }
+    Codec { buffer: BitSlice::from_slice(input), index: 0 }
   }
-  fn read_bits(&mut self, n: usize) -> u64 {
+  pub fn look_bits(&self, n: usize) -> u64 {
     assert!(n <= 64);
-    let mut bit_count = self.remain;
-    let mut bits = self.bits as u128;
-    while n > bit_count {
-      bits <<= 8;
-      bits |= self.buffer[self.current_byte] as u128;
-      // bits |= self.buffer.get(self.current_byte).cloned().unwrap_or_default() as u128;
-      self.current_byte += 1;
-      bit_count += 8;
-    }
-    self.remain = bit_count - n;
-    assert!(self.remain < 8);
-    self.bits = bits as u8 & ((1 << self.remain) - 1);
-    // println!("{}/{} {:b}", n, bit_count, bits);
-    (bits >> self.remain) as u64
+    if n == 0 { return 0 }
+    self.buffer[self.index..self.index+n].load_be()
+  }
+  pub fn read_bits(&mut self, n: usize) -> u64 {
+    assert!(n <= 64);
+    let result = self.look_bits(n);
+    self.index += n;
+    result
+  }
+  pub fn skip_bits(&mut self, n: usize) {
+    self.index += n;
   }
 
   pub fn decode(&mut self) -> Result<Huffman<u32>, Error> {
-    let symbol_count = self.read_bits(Huffman::<()>::MAX_SYMBOL_COUNT_BIT) as usize;
+    let symbol_count = self.read_bits(Huffman::<()>::MAX_SYMBOL_COUNT_BIT) as u32;
     let mut tmp_symbol_depth = BTreeMap::new();
     let tmp_symbol_count = self.read_bits(5) as usize;
-    ensure!(tmp_symbol_count < Huffman::<()>::TRANS_SYMBOL_IDX.len(), anyhow!("symbol_size_count"));
+    ensure!(tmp_symbol_count < Key::SHUFFLE.len(), anyhow!("symbol_size_count"));
     for i in 0..tmp_symbol_count {
       let value = self.read_bits(3) as usize;
       if value != 0 {
-        tmp_symbol_depth.insert(Huffman::<()>::TRANS_SYMBOL_IDX[i], value);
+        tmp_symbol_depth.insert(Key::SHUFFLE[i], value);
       }
     }
-    println!("tmp_symbol_depth: {:?}", Huffman::new(tmp_symbol_depth));
-    let symbol_depth = BTreeMap::new();
+    let key = Huffman::new(tmp_symbol_depth);
+    println!("tmp_symbol_depth: {:?}", key);
+    let mut symbol_depth = BTreeMap::new();
+    let mut i = 0;
+    let mut last = None;
+    while i < symbol_count {
+      let (len, d) = match key.next(self) {
+        Depth(d) => (1, d),
+        ShortZero => (self.read_bits(3) + 3, 0),
+        LongZero => (self.read_bits(7) + 11, 0),
+        ShortRepeat => (self.read_bits(2) + 3, last.unwrap()),
+        LongRepeat => (self.read_bits(6) + 7, last.unwrap()),
+      };
+      last = Some(d);
+      for j in 0..len as u32 {
+        if d != 0 {
+          symbol_depth.insert(i+j, d);
+        }
+      }
+      i += len as u32;
+    }
     Ok(Huffman::new(symbol_depth))
   }
 }
@@ -52,19 +67,18 @@ fn test_read_bits() {
   let input = [0b1100_1010u8, 0b0110_1101, 0b1101_1001];
   let mut codec = Codec::new(&input);
   assert_eq!(codec.read_bits(3), 0b110);
-  assert_eq!((codec.remain, codec.bits), (5, 0b1010));
+  assert_eq!(codec.index, 3);
   assert_eq!(codec.read_bits(17), 0b1010_0110_1101_1101);
-  assert_eq!((codec.remain, codec.bits), (4, 0b1001));
+  assert_eq!(codec.index, 20);
   assert_eq!(codec.read_bits(0), 0);
-  assert_eq!((codec.remain, codec.bits), (4, 0b1001));
+  assert_eq!(codec.index, 20);
 
   assert_eq!(Huffman::<()>::MAX_SYMBOL_COUNT, 1 << (Huffman::<()>::MAX_SYMBOL_COUNT_BIT - 1));
 }
 
-
 #[derive(Debug)]
 pub struct Huffman<T> {
-  depth_count: [usize; Huffman::<()>::MAX_SYMBOL_DEPTH+1],
+  depth_count: [usize; Key::MAX_DEPTH+1],
   /// [0, 1, 3, 7, 15, 32]
   /// for depth of i, the range of encoded is depth_bound[i-1]*2..depth_bound[i]
   /// 1: 0..1 => 0b0
@@ -72,7 +86,7 @@ pub struct Huffman<T> {
   /// 3: 6..7 => 0b110
   /// 4: 14..15 => 0b1110
   /// 5: 30..32 => 0b11110, 0b11111
-  depth_bound: [u32; Huffman::<()>::MAX_SYMBOL_DEPTH+1],
+  depth_bound: [u32; Key::MAX_DEPTH+1],
   symbol_depth: BTreeMap<T, usize>,
   symbols: BTreeMap<T, u32>,
   symbol_rev: BTreeMap<u32, T>,
@@ -81,12 +95,12 @@ pub struct Huffman<T> {
 
 impl<T: Ord+Copy> Huffman<T> {
   pub fn new(symbol_depth: BTreeMap<T, usize>) -> Self {
-    let mut depth_count = [0; 17];
+    let mut depth_count = [0; Key::MAX_DEPTH+1];
     for &depth in symbol_depth.values() {
       depth_count[depth] += 1;
     }
     let mut max_depth = 0;
-    let mut depth_bound= [0; 17];
+    let mut depth_bound= [0; Key::MAX_DEPTH+1];
     let mut available = 0;
     for (depth, &n) in depth_count.iter().enumerate() {
       if n != 0 {
@@ -98,15 +112,16 @@ impl<T: Ord+Copy> Huffman<T> {
       }
       depth_bound[depth] = available;
     }
-    // assert_eq!(1<<max_depth, depth_bound[max_depth]);
-    let mut depth_current = [0; 17];
-    for i in 1..17 {
+    assert_eq!(1<<max_depth, depth_bound[max_depth]);
+    let mut depth_current = [0; Key::MAX_DEPTH+1];
+    for i in 1..=Key::MAX_DEPTH {
       depth_current[i] = depth_bound[i-1]*2;
     }
-    let symbols: BTreeMap<_, _> = symbol_depth.iter().map(|(&key, &depth)| {
+    let symbols: BTreeMap<_, _> = symbol_depth.iter().filter_map(|(&key, &depth)| {
+      if depth == 0 { return None }
       let result = depth_current[depth];
       depth_current[depth] += 1;
-      (key, result)
+      Some((key, result))
     }).collect();
     let symbol_rev = symbols.iter().map(|(&k, &v)| (v, k)).collect();
     Self {
@@ -115,28 +130,39 @@ impl<T: Ord+Copy> Huffman<T> {
       symbols, symbol_rev,
     }
   }
-}
 
-pub struct HuffmanCodec<'a, T> {
-  huffman: &'a Huffman<T>,
-  codec: &'a Codec<'a>,
-}
-
-impl<T> Iterator for HuffmanCodec<'_, T> {
-  type Item = T; // 0..MAX_SYMBOL
-  fn next(&mut self) -> Option<Self::Item> {
-    None
+  pub fn next(&self, codec: &mut Codec<'_>) -> T {
+    let k = codec.look_bits(self.max_depth) as u32;
+    for i in 1..=self.max_depth {
+      let t = k >> (self.max_depth - i);
+      if let Some(sym) = self.symbol_rev.get(&t) {
+        codec.index += i;
+        return *sym
+      }
+    }
+    unreachable!("complete huffman tree mut match");
   }
+}
+
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+pub enum Key {
+  Depth(usize),
+  ShortZero /* 17 */, LongZero /* 18 */,
+  ShortRepeat /* 19 */, LongRepeat /* 20 */,
+}
+use Key::*;
+
+impl Key {
+  pub const MAX_DEPTH: usize = 16;
+  pub const SHUFFLE: [Key; Self::MAX_DEPTH+5] = [
+    ShortZero, LongZero, ShortRepeat, LongRepeat,
+    Depth(0), Depth(8), Depth(7), Depth(9),
+    Depth(6), Depth(10), Depth(5), Depth(11),
+    Depth(4), Depth(12), Depth(3), Depth(13),
+    Depth(2), Depth(14), Depth(1), Depth(15), Depth(16)];
 }
 
 impl<T> Huffman<T> {
   pub const MAX_SYMBOL_COUNT: usize = 8192;
   pub const MAX_SYMBOL_COUNT_BIT: usize = 14;
-  pub const MAX_SYMBOL_DEPTH: usize = 16;
-  pub const TRANS_SYMBOL_IDX: [usize; Huffman::<()>::MAX_SYMBOL_DEPTH+5] = [
-    17, 18, 19, 20,
-    0, 8, 7, 9,
-    6, 10, 5, 11,
-    4, 12, 3, 13,
-    2, 14, 1, 15, 16];
 }
