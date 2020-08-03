@@ -160,7 +160,7 @@ impl Header {
     })
   }
 
-  pub fn get_color_endpoints(&self, input: &[u8]) -> Result<Vec<u32>, Error> {
+  pub fn get_color_endpoints(&self, input: &[u8]) -> Result<Vec<(u16, u16)>, Error> {
     let mut codec = if let Some(data) = self.get_palette_data(self.color_endpoints, input) {
       codec::Codec::new(&data)
     } else { return Ok(vec![]) };
@@ -170,19 +170,19 @@ impl Header {
     let (mut a, mut b, mut c) = (0, 0, 0);
     let (mut d, mut e, mut f) = (0, 0, 0);
     let color_endpoints = (0..self.color_endpoints.count).map(|_i| {
-      let da = dm1.next(&mut codec)?; a = (a + da) & 0x1f;
-      let db = dm2.next(&mut codec)?; b = (b + db) & 0x3f;
-      let dc = dm1.next(&mut codec)?; c = (c + dc) & 0x1f;
-      let dd = dm1.next(&mut codec)?; d = (d + dd) & 0x1f;
-      let de = dm2.next(&mut codec)?; e = (e + de) & 0x3f;
-      let df = dm1.next(&mut codec)?; f = (f + df) & 0x1f;
-      Ok::<_, Error>(c | (b << 5) | (a << 11) | (f << 16) | (e << 21) | (d << 27))
+      let da = dm1.next(&mut codec)? as u16; a = (a + da) & 0x1f;
+      let db = dm2.next(&mut codec)? as u16; b = (b + db) & 0x3f;
+      let dc = dm1.next(&mut codec)? as u16; c = (c + dc) & 0x1f;
+      let dd = dm1.next(&mut codec)? as u16; d = (d + dd) & 0x1f;
+      let de = dm2.next(&mut codec)? as u16; e = (e + de) & 0x3f;
+      let df = dm1.next(&mut codec)? as u16; f = (f + df) & 0x1f;
+      Ok::<_, Error>((c | (b << 5) | (a << 11), f | (e << 5) | (d << 11)))
     }).collect::<Result<Vec<_>, _>>()?;
     if !codec.is_complete() { bail!("extra bytes in codec") }
     Ok(color_endpoints)
   }
 
-  pub fn get_alpha_endpoints(&self, input: &[u8]) -> Result<Vec<u16>, Error> {
+  pub fn get_alpha_endpoints(&self, input: &[u8]) -> Result<Vec<(u8, u8)>, Error> {
     let mut codec = if let Some(data) = self.get_palette_data(self.alpha_endpoints, input) {
       codec::Codec::new(&data)
     } else { return Ok(vec![]) };
@@ -190,15 +190,15 @@ impl Header {
     // println!("{:?}", dm);
     let (mut a, mut b) = (0, 0);
     let color_endpoints = (0..self.alpha_endpoints.count).map(|_i| {
-      let da = dm.next(&mut codec)?; a = (a + da as u16) & 0xff;
-      let db = dm.next(&mut codec)?; b = (b + db as u16) & 0xff;
-      Ok::<_, Error>(a | (b << 8))
+      let da = dm.next(&mut codec)?; a = (a as u32 + da) as u8;
+      let db = dm.next(&mut codec)?; b = (b as u32 + db) as u8;
+      Ok::<_, Error>((a, b))
     }).collect::<Result<Vec<_>, _>>()?;
     if !codec.is_complete() { bail!("extra bytes in codec") }
     Ok(color_endpoints)
   }
 
-  pub fn get_color_selectors(&self, input: &[u8]) -> Result<Vec<u32>, Error> {
+  pub fn get_color_selectors(&self, input: &[u8]) -> Result<Vec<[u8; 4]>, Error> {
     let mut codec = if let Some(data) = self.get_palette_data(self.color_selectors, input) {
       codec::Codec::new(&data)
     } else { return Ok(vec![]) };
@@ -208,7 +208,7 @@ impl Header {
     let mut x = [0; 8];
     let mut y = [0; 8];
 
-    const C: [u32; 4] = [0, 2, 3, 1]; // DXT1
+    const C: [u8; 4] = [0, 2, 3, 1]; // DXT1
 
     let color_selectors = (0..self.color_selectors.count).map(|_i| {
       for (x, y) in &mut x.iter_mut().zip(&mut y) {
@@ -217,11 +217,12 @@ impl Header {
         *y = ((*y as i32 + d / 7 - 3) & 3) as usize;
       }
 
-      let result =
-      (C[x[0]]      ) | (C[y[0]] <<  2) | (C[x[1]] <<  4) | (C[y[1]] <<  6) |
-      (C[x[2]] <<  8) | (C[y[2]] << 10) | (C[x[3]] << 12) | (C[y[3]] << 14) |
-      (C[x[4]] << 16) | (C[y[4]] << 18) | (C[x[5]] << 20) | (C[y[5]] << 22) |
-      (C[x[6]] << 24) | (C[y[6]] << 26) | (C[x[7]] << 28) | (C[y[7]] << 30);
+      let result = [
+        C[x[0]] | (C[y[0]] << 2) | (C[x[1]] << 4) | (C[y[1]] << 6),
+        C[x[2]] | (C[y[2]] << 2) | (C[x[3]] << 4) | (C[y[3]] << 6),
+        C[x[4]] | (C[y[4]] << 2) | (C[x[5]] << 4) | (C[y[5]] << 6),
+        C[x[6]] | (C[y[6]] << 2) | (C[x[7]] << 4) | (C[y[7]] << 6),
+      ];
       Ok::<_, Error>(result)
     }).collect::<Result<Vec<_>, _>>()?;
     if !codec.is_complete() { bail!("extra bytes in codec") }
@@ -229,7 +230,7 @@ impl Header {
     Ok(color_selectors)
   }
 
-  pub fn get_alpha_selectors(&self, input: &[u8]) -> Result<Vec<(u16, u16, u16)>, Error> {
+  pub fn get_alpha_selectors(&self, input: &[u8]) -> Result<Vec<[u8; 6]>, Error> {
     let mut codec = if let Some(data) = self.get_palette_data(self.alpha_selectors, input) {
       codec::Codec::new(&data)
     } else { return Ok(vec![]) };
@@ -242,24 +243,26 @@ impl Header {
     const C: [u16; 8] = [0, 2, 3, 4, 5, 6, 7, 1]; // DXT5
 
     let alpha_selectors = (0..self.alpha_selectors.count).map(|_i| {
-      for (x, y) in &mut x.iter_mut().zip(&mut y) {
+      use bitvec::{slice::BitSlice, order::Msb0, fields::BitField};
+      let mut s = [0u8; 6];
+      let s_bits = BitSlice::<Msb0, u8>::from_slice_mut(&mut s);
+      let s_len = s_bits.len();
+      for (j, (x, y)) in &mut x.iter_mut().zip(&mut y).enumerate() {
         let d = dm.next(&mut codec)? as i32;
         *x = ((*x as i32 + d % 15 - 7) & 7) as usize;
         *y = ((*y as i32 + d / 15 - 7) & 7) as usize;
+        s_bits[s_len-j*6-3..s_len-j*6-0].store_be(C[*x]);
+        s_bits[s_len-j*6-6..s_len-j*6-3].store_be(C[*y]);
       }
-
-      Ok::<_, Error>((
-        (C[x[0]]      ) | (C[y[0]] <<  3) | (C[x[1]] <<  6) | (C[y[1]] <<  9) | (C[x[2]] << 12) | (C[y[2]] << 15),
-        (C[y[2]] >>  1) | (C[x[3]] <<  2) | (C[y[3]] <<  5) | (C[x[4]] <<  8) | (C[y[4]] << 11) | (C[x[5]] << 14),
-        (C[x[5]] >>  2) | (C[y[5]] <<  1) | (C[x[6]] <<  4) | (C[y[6]] <<  7) | (C[x[7]] << 10) | (C[y[7]] << 13),
-      ))
+      s.reverse();
+      Ok::<_, Error>(s)
     }).collect::<Result<Vec<_>, Error>>()?;
     if !codec.is_complete() { bail!("extra bytes in codec") }
 
     Ok(alpha_selectors)
   }
 
-  pub fn unpack_level(&self, tables: &Tables, input: &[u8], idx: usize) -> Result<Vec<u16>, Error> {
+  pub fn unpack_level(&self, tables: &Tables, input: &[u8], idx: usize) -> Result<Vec<u8>, Error> {
     use crate::unpack::Unpack;
     let mut codec = if let Some(data) = self.get_level_data(input, idx) {
       codec::Codec::new(data)
@@ -291,11 +294,10 @@ pub struct Tables {
   pub alpha_endpoint_delta: Huffman,
   pub alpha_selector_delta: Huffman,
 
-
-  pub color_endpoints: Vec<u32>,
-  pub color_selectors: Vec<u32>,
-  pub alpha_endpoints: Vec<u16>,
-  pub alpha_selectors: Vec<(u16, u16, u16)>,
+  pub color_endpoints: Vec<(u16, u16)>,
+  pub color_selectors: Vec<[u8; 4]>,
+  pub alpha_endpoints: Vec<(u8, u8)>,
+  pub alpha_selectors: Vec<[u8; 6]>,
 }
 
 #[test]
@@ -313,8 +315,8 @@ fn test_file() {
   assert!(header.check_crc(&buffer));
 
   let tables = header.get_table(&buffer).expect("read table");
-  // println!("table: {:?}", tables);
+  println!("table: {:x?}", tables);
   let level0 = header.unpack_level(&tables, &buffer, 0).expect("unpack");
-  println!("{:x?}", level0);
+  println!("{:02x?}", level0);
   header.unpack_level(&tables, &buffer, header.level_count as usize - 1).expect("unpack");
 }

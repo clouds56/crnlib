@@ -100,7 +100,6 @@ fn test_read_bits() {
   assert_eq!(Huffman::<()>::MAX_SYMBOL_COUNT, 1 << (Huffman::<()>::MAX_SYMBOL_COUNT_BIT - 1));
 }
 
-#[derive(Debug)]
 pub struct Huffman<T> {
   depth_count: [usize; Key::MAX_DEPTH+1],
   /// [0, 1, 3, 7, 15, 32]
@@ -110,11 +109,22 @@ pub struct Huffman<T> {
   /// 3: 6..7 => 0b110
   /// 4: 14..15 => 0b1110
   /// 5: 30..32 => 0b11110, 0b11111
-  depth_bound: [u32; Key::MAX_DEPTH+1],
+  // depth_bound: [u32; Key::MAX_DEPTH+1],
   symbol_depth: BTreeMap<T, usize>,
   symbols: BTreeMap<T, u32>,
   symbol_rev: BTreeMap<(usize, u32), T>,
   max_depth: usize,
+}
+
+impl<T: std::fmt::Debug> std::fmt::Debug for Huffman<T> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("Huffman")
+      .field("symbol_count", &self.symbols.len())
+      .field("max_depth", &self.max_depth)
+      .field("symbol_depth", &self.symbol_depth)
+      .field("depth_count", &self.depth_count)
+      .finish()
+  }
 }
 
 impl<T: Ord+Copy> Huffman<T> {
@@ -149,8 +159,7 @@ impl<T: Ord+Copy> Huffman<T> {
     }).collect();
     let symbol_rev = symbols.iter().map(|(&k, &v)| ((symbol_depth[&k], v), k)).collect();
     Ok(Self {
-      depth_count, symbol_depth,
-      max_depth, depth_bound,
+      depth_count, symbol_depth, max_depth,
       symbols, symbol_rev,
     })
   }
@@ -165,7 +174,7 @@ impl<T: Ord+Copy> Huffman<T> {
         return Ok(*sym)
       }
     }
-    unreachable!("complete huffman tree mut match");
+    unreachable!("complete huffman tree must match");
   }
 }
 
