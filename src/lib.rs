@@ -1,4 +1,5 @@
 pub mod codec;
+pub mod unpack;
 
 use serde::{Serialize, Deserialize};
 use anyhow::*;
@@ -139,27 +140,27 @@ impl Header {
 
   pub fn get_table(&self, input: &[u8]) -> Result<Tables, Error> {
     let mut codec = codec::Codec::new(self.get_table_data(input));
-    let chunk = codec.get_huffman().context("read chunk table")?;
-    let color_endpoint = if self.color_endpoints.count != 0 {
-      codec.get_huffman().context("read color_endpoint table")?.into()
-    } else { None };
-    let color_selector = if self.color_selectors.count != 0 {
-      codec.get_huffman().context("read color_selector table")?.into()
-    } else { None };
-    let alpha_endpoint = if self.alpha_endpoints.count != 0 {
-      codec.get_huffman().context("read alpha_endpoint table")?.into()
-    } else { None };
-    let alpha_selector = if self.alpha_selectors.count != 0 {
-      codec.get_huffman().context("read alpha_selector table")?.into()
-    } else { None };
+    let chunk_encoding = codec.get_huffman().context("read chunk table")?;
+    let color_endpoint_delta = codec.get_huffman().context("read color_endpoint table")?;
+    let color_selector_delta = codec.get_huffman().context("read color_selector table")?;
+    let alpha_endpoint_delta = codec.get_huffman().context("read alpha_endpoint table")?;
+    let alpha_selector_delta = codec.get_huffman().context("read alpha_selector table")?;
     if !codec.is_complete() { bail!("extra bytes in codec") }
-    Ok(Tables { chunk, color_endpoint, color_selector, alpha_endpoint, alpha_selector })
+    let color_endpoints = self.get_color_endpoints(input).context("decode color_endpoints")?;
+    let color_selectors = self.get_color_selectors(input).context("decode color_selectors")?;
+    let alpha_endpoints = self.get_alpha_endpoints(input).context("decode alpha_endpoints")?;
+    let alpha_selectors = self.get_alpha_selectors(input).context("decode alpha_selectors")?;
+    Ok(Tables {
+      chunk_encoding,
+      color_endpoint_delta, color_selector_delta, alpha_endpoint_delta, alpha_selector_delta,
+      color_endpoints, color_selectors, alpha_endpoints, alpha_selectors,
+    })
   }
 
-  pub fn get_color_endpoints(&self, input: &[u8]) -> Result<Option<Vec<u32>>, Error> {
+  pub fn get_color_endpoints(&self, input: &[u8]) -> Result<Vec<u32>, Error> {
     let mut codec = if let Some(data) = self.get_palette_data(self.color_endpoints, input) {
       codec::Codec::new(&data)
-    } else { return Ok(None) };
+    } else { return Ok(vec![]) };
     let dm1 = codec.get_huffman().context("color_endpoints_dm1")?;
     let dm2 = codec.get_huffman().context("color_endpoints_dm2")?;
     // println!("{:?} {:?}", dm1, dm2);
@@ -175,13 +176,13 @@ impl Header {
       Ok::<_, Error>(c | (b << 5) | (a << 11) | (f << 16) | (e << 21) | (d << 27))
     }).collect::<Result<Vec<_>, _>>()?;
     if !codec.is_complete() { bail!("extra bytes in codec") }
-    Ok(Some(color_endpoints))
+    Ok(color_endpoints)
   }
 
-  pub fn get_alpha_endpoints(&self, input: &[u8]) -> Result<Option<Vec<u16>>, Error> {
+  pub fn get_alpha_endpoints(&self, input: &[u8]) -> Result<Vec<u16>, Error> {
     let mut codec = if let Some(data) = self.get_palette_data(self.alpha_endpoints, input) {
       codec::Codec::new(&data)
-    } else { return Ok(None) };
+    } else { return Ok(vec![]) };
     let dm = codec.get_huffman().context("alpha_endpoints_dm1")?;
     // println!("{:?}", dm);
     let (mut a, mut b) = (0, 0);
@@ -191,13 +192,13 @@ impl Header {
       Ok::<_, Error>(a | (b << 8))
     }).collect::<Result<Vec<_>, _>>()?;
     if !codec.is_complete() { bail!("extra bytes in codec") }
-    Ok(Some(color_endpoints))
+    Ok(color_endpoints)
   }
 
-  pub fn get_color_selectors(&self, input: &[u8]) -> Result<Option<Vec<u32>>, Error> {
+  pub fn get_color_selectors(&self, input: &[u8]) -> Result<Vec<u32>, Error> {
     let mut codec = if let Some(data) = self.get_palette_data(self.color_selectors, input) {
       codec::Codec::new(&data)
-    } else { return Ok(None) };
+    } else { return Ok(vec![]) };
     let dm = codec.get_huffman().context("color_selectors_dm")?;
     // println!("{:?}", dm);
 
@@ -222,13 +223,13 @@ impl Header {
     }).collect::<Result<Vec<_>, _>>()?;
     if !codec.is_complete() { bail!("extra bytes in codec") }
 
-    Ok(Some(color_selectors))
+    Ok(color_selectors)
   }
 
-  pub fn get_alpha_selectors(&self, input: &[u8]) -> Result<Option<Vec<(u16, u16, u16)>>, Error> {
+  pub fn get_alpha_selectors(&self, input: &[u8]) -> Result<Vec<(u16, u16, u16)>, Error> {
     let mut codec = if let Some(data) = self.get_palette_data(self.alpha_selectors, input) {
       codec::Codec::new(&data)
-    } else { return Ok(None) };
+    } else { return Ok(vec![]) };
     let dm = codec.get_huffman().context("alpha_selectors_dm")?;
     // println!("{:?}", dm);
 
@@ -252,21 +253,27 @@ impl Header {
     }).collect::<Result<Vec<_>, Error>>()?;
     if !codec.is_complete() { bail!("extra bytes in codec") }
 
-    Ok(Some(alpha_selectors))
+    Ok(alpha_selectors)
   }
 }
 
 #[derive(Debug)]
 pub struct Tables {
-  pub chunk: Huffman,
-  pub color_endpoint: Option<Huffman>,
-  pub color_selector: Option<Huffman>,
-  pub alpha_endpoint: Option<Huffman>,
-  pub alpha_selector: Option<Huffman>,
+  pub chunk_encoding: Huffman,
+  pub color_endpoint_delta: Huffman,
+  pub color_selector_delta: Huffman,
+  pub alpha_endpoint_delta: Huffman,
+  pub alpha_selector_delta: Huffman,
+
+
+  pub color_endpoints: Vec<u32>,
+  pub color_selectors: Vec<u32>,
+  pub alpha_endpoints: Vec<u16>,
+  pub alpha_selectors: Vec<(u16, u16, u16)>,
 }
 
 #[test]
-fn test_header() {
+fn test_file() {
   use std::io::prelude::*;
   let sample = "samples/test.crn";
   assert_eq!(Header::fixed_size(), Header::serialize_option()
@@ -274,19 +281,14 @@ fn test_header() {
   let mut file = std::fs::File::open(sample).expect("open sample crn file");
   let mut buffer = Vec::new();
   file.read_to_end(&mut buffer).expect("read crn file");
-  let h = Header::parse(&buffer).expect("parse");
-  println!("header: {:x?}", h);
-  assert_eq!(h.header_size as usize, Header::fixed_size() + 4*h.level_count as usize);
-  assert!(h.check_crc(&buffer));
+  let header = Header::parse(&buffer).expect("parse");
+  println!("header: {:x?}", header);
+  assert_eq!(header.header_size as usize, Header::fixed_size() + 4*header.level_count as usize);
+  assert!(header.check_crc(&buffer));
 
-  let _table = h.get_table(&buffer).expect("read table");
-  // println!("table: {:?}", table);
-  let _color_endpoints = h.get_color_endpoints(&buffer).expect("read color_endpoints");
-  println!("color_endpoints: {:x?}", _color_endpoints);
-  let _color_selectors = h.get_color_selectors(&buffer).expect("read color_selectors");
-  println!("color_selectors: {:x?}", _color_selectors);
-  let _alpha_endpoints = h.get_alpha_endpoints(&buffer).expect("read alpha_endpoints");
-  println!("alpha_endpoints: {:x?}", _alpha_endpoints);
-  let _alpha_selectors = h.get_alpha_selectors(&buffer).expect("read alpha_selectors");
-  println!("alpha_selectors: {:x?}", _alpha_selectors);
+  let tables = header.get_table(&buffer).expect("read table");
+  // println!("table: {:?}", tables);
+  let level0 = unpack::Dxt5::unpack(&header, &tables, &buffer, 0).expect("unpack");
+  println!("{:x?}", level0);
+  unpack::Dxt5::unpack(&header, &tables, &buffer, header.level_count as usize - 1).expect("unpack");
 }
