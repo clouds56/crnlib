@@ -10,7 +10,10 @@ type Huffman = codec::Huffman<u32>;
 #[derive(Debug, Copy, Clone, serde_repr::Serialize_repr, serde_repr::Deserialize_repr)]
 #[repr(u8)]
 pub enum Format {
-  Dxt1 = 0, Dxt1A, Dxt3, Dxt5, Dxt5A, DxnXY, DxnYX,
+  Dxt1 = 0, Dxt3, Dxt5,
+  Dxt5CCxY, Dxt5xGxR, Dxt5xGBR, Dxt5AGBR,
+  DxnXY, DxnYX,
+  Dxt5A, Etc1,
   Invalid = 0xff,
 }
 impl Default for Format {
@@ -255,6 +258,29 @@ impl Header {
 
     Ok(alpha_selectors)
   }
+
+  pub fn unpack_level(&self, tables: &Tables, input: &[u8], idx: usize) -> Result<Vec<u16>, Error> {
+    use crate::unpack::Unpack;
+    let mut codec = if let Some(data) = self.get_level_data(input, idx) {
+      codec::Codec::new(data)
+    } else { bail!("level out of index") };
+    let width = 1.max(self.width >> idx);
+    let height = 1.max(self.height >> idx);
+    match self.format {
+      Format::Dxt1 => unimplemented!("
+        unpack::Dxt1::unpack(tables, &mut codec, width, height, self.face_count)
+      "),
+      Format::Dxt5 | Format::Dxt5AGBR | Format::Dxt5CCxY | Format::Dxt5xGBR | Format::Dxt5xGxR =>
+        unpack::Dxt5::unpack(tables, &mut codec, width, height, self.face_count),
+      Format::Dxt5A => unimplemented!("
+        unpack::Dxt5A::unpack(tables, &mut codec, width, height, self.face_count)
+      "),
+      Format::DxnXY | Format::DxnYX => unimplemented!("
+        unpack::Dxn::unpack(tables, &mut codec, width, height, self.face_count)
+      "),
+      Format::Dxt3 | Format::Etc1 | Format::Invalid => bail!("unsupported format {:?}", self.format),
+    }
+  }
 }
 
 #[derive(Debug)]
@@ -288,7 +314,7 @@ fn test_file() {
 
   let tables = header.get_table(&buffer).expect("read table");
   // println!("table: {:?}", tables);
-  let level0 = unpack::Dxt5::unpack(&header, &tables, &buffer, 0).expect("unpack");
+  let level0 = header.unpack_level(&tables, &buffer, 0).expect("unpack");
   println!("{:x?}", level0);
-  unpack::Dxt5::unpack(&header, &tables, &buffer, header.level_count as usize - 1).expect("unpack");
+  header.unpack_level(&tables, &buffer, header.level_count as usize - 1).expect("unpack");
 }

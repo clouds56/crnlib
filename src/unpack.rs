@@ -1,15 +1,14 @@
 use anyhow::*;
-use crate::{Header, Tables, codec::Codec};
+use crate::{Tables, codec::Codec};
 
 pub struct Dxt5;
 
-impl Dxt5 {
-  pub fn unpack(header: &Header, tables: &Tables, input: &[u8], idx: usize) -> Result<Vec<u16>, Error> {
-    let mut codec = if let Some(data) = header.get_level_data(input, idx) {
-      Codec::new(data)
-    } else { bail!("level out of index") };
-    let width = 1.max(header.width >> idx);
-    let height = 1.max(header.height >> idx);
+pub trait Unpack {
+  fn unpack(tables: &Tables, codec: &mut Codec, width: u16, height: u16, face: u8) -> Result<Vec<u16>, Error>;
+}
+
+impl Unpack for Dxt5 {
+  fn unpack(tables: &Tables, codec: &mut Codec, width: u16, height: u16, face: u8) -> Result<Vec<u16>, Error> {
     let block_x = (width + 3) / 4;
     let block_y = (height + 3) / 4;
     let chunk_x = (block_x + 1) / 2;
@@ -33,7 +32,7 @@ impl Dxt5 {
 
     let mut result = Vec::new();
 
-    for _f in 0..header.face_count {
+    for _f in 0..face {
       // let mut row = Vec::new();
       for y in 0..chunk_y {
         let xrange: Box<dyn Iterator<Item=_>> = if y & 1 == 1 { Box::new((0..chunk_x).rev()) } else { Box::new(0..chunk_x) };
@@ -42,7 +41,7 @@ impl Dxt5 {
           let mut alpha_endpoints = [0; 4];
 
           if chunk_encoding_bits == 1 {
-            chunk_encoding_bits = tables.chunk_encoding.next(&mut codec).context("read chunk encoding bits")?;
+            chunk_encoding_bits = tables.chunk_encoding.next(codec).context("read chunk encoding bits")?;
             chunk_encoding_bits |= 512;
           }
 
@@ -53,26 +52,26 @@ impl Dxt5 {
           let tiles = &TILES[chunk_encoding_index];
 
           for i in 0..tiles_count {
-            let delta = tables.alpha_endpoint_delta.next(&mut codec).context("read alpha_endpoint_delta")? as usize;
+            let delta = tables.alpha_endpoint_delta.next(codec).context("read alpha_endpoint_delta")? as usize;
             prev_alpha_endpoint_index += delta;
             prev_alpha_endpoint_index %= tables.alpha_endpoints.len();
             alpha_endpoints[i] = tables.alpha_endpoints[prev_alpha_endpoint_index];
           }
 
           for i in 0..tiles_count {
-            let delta = tables.color_endpoint_delta.next(&mut codec).context("read color_endpoint_delta")? as usize;
+            let delta = tables.color_endpoint_delta.next(codec).context("read color_endpoint_delta")? as usize;
             prev_color_endpoint_index += delta;
             prev_color_endpoint_index %= tables.color_endpoints.len();
             color_endpoints[i] = tables.color_endpoints[prev_color_endpoint_index];
           }
 
           for &tile in tiles {
-            let delta = tables.alpha_selector_delta.next(&mut codec).context("read alpha_selector_delta")? as usize;
+            let delta = tables.alpha_selector_delta.next(codec).context("read alpha_selector_delta")? as usize;
             prev_alpha_selector_index += delta;
             prev_alpha_selector_index %= tables.alpha_selectors.len();
             let alpha_selector = tables.alpha_selectors[prev_alpha_selector_index];
 
-            let delta = tables.color_selector_delta.next(&mut codec).context("read color_selector_delta")? as usize;
+            let delta = tables.color_selector_delta.next(codec).context("read color_selector_delta")? as usize;
             prev_color_selector_index += delta;
             prev_color_selector_index %= tables.alpha_selectors.len();
             let color_selector = tables.color_selectors[prev_color_selector_index];
