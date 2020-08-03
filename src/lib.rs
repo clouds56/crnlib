@@ -213,8 +213,8 @@ impl Header {
     let color_selectors = (0..self.color_selectors.count).map(|_i| {
       for (x, y) in &mut x.iter_mut().zip(&mut y) {
         let d = dm.next(&mut codec)? as i32;
-        *x = ((*x as i32 + d % 15 - 7) & 3) as usize;
-        *y = ((*y as i32 + d / 15 - 7) & 3) as usize;
+        *x = ((*x as i32 + d % 7 - 3) & 3) as usize;
+        *y = ((*y as i32 + d / 7 - 3) & 3) as usize;
       }
 
       let result =
@@ -244,8 +244,8 @@ impl Header {
     let alpha_selectors = (0..self.alpha_selectors.count).map(|_i| {
       for (x, y) in &mut x.iter_mut().zip(&mut y) {
         let d = dm.next(&mut codec)? as i32;
-        *x = ((*x as i32 + d % 15 - 7) & 3) as usize;
-        *y = ((*y as i32 + d / 15 - 7) & 3) as usize;
+        *x = ((*x as i32 + d % 15 - 7) & 7) as usize;
+        *y = ((*y as i32 + d / 15 - 7) & 7) as usize;
       }
 
       Ok::<_, Error>((
