@@ -262,6 +262,14 @@ impl Header {
     Ok(alpha_selectors)
   }
 
+  pub fn get_level_info(&self, idx: usize) -> Option<(u16, u16)> {
+    if idx < self.level_count as usize {
+      let width = 1.max(self.width >> idx);
+      let height = 1.max(self.height >> idx);
+      (width, height).into()
+    } else { None }
+  }
+
   pub fn unpack_level(&self, tables: &Tables, input: &[u8], idx: usize) -> Result<Vec<u8>, Error> {
     use crate::unpack::Unpack;
     let mut codec = if let Some(data) = self.get_level_data(input, idx) {
@@ -319,4 +327,15 @@ fn test_file() {
   let level0 = header.unpack_level(&tables, &buffer, 0).expect("unpack");
   println!("{:02x?}", level0);
   header.unpack_level(&tables, &buffer, header.level_count as usize - 1).expect("unpack");
+
+  use image::ImageDecoder;
+  let (width0, height0) = header.get_level_info(0).expect("get level info");
+  assert_eq!((width0, height0), (header.width, header.height));
+  let decoder = image::dxt::DxtDecoder::new(std::io::Cursor::new(&level0), width0 as u32, height0 as u32, image::dxt::DXTVariant::DXT5).expect("new image");
+  let mut raw = vec![0; decoder.total_bytes() as usize];
+  let color_type = decoder.color_type();
+  decoder.read_image(&mut raw).expect("decode dxt");
+  let f = std::fs::File::create(std::path::Path::new(sample).with_extension("tga")).expect("create sample tga file");
+  let encoder = image::tga::TgaEncoder::new(f);
+  encoder.encode(&raw, width0 as u32, height0 as u32, color_type).expect("encode tga");
 }
