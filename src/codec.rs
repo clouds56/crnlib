@@ -25,6 +25,7 @@ impl Codec<'_> {
     if self.index + n > self.buffer.len() {
       bail!("read out of index {} < {}", self.index+n, self.buffer.len());
     }
+    if n == 0 { return Ok(0) }
     let result = self.buffer[self.index..self.index+n].load_be();
     self.index += n;
     Ok(result)

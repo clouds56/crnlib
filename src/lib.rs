@@ -144,21 +144,36 @@ impl Header {
   pub fn get_table(&self, input: &[u8]) -> Result<Tables, Error> {
     let mut codec = codec::Codec::new(self.get_table_data(input));
     let chunk_encoding = codec.get_huffman().context("read chunk table")?;
-    let color_endpoint_delta = codec.get_huffman().context("read color_endpoint table")?;
-    let color_selector_delta = codec.get_huffman().context("read color_selector table")?;
-    let alpha_endpoint_delta = codec.get_huffman().context("read alpha_endpoint table")?;
-    let alpha_selector_delta = codec.get_huffman().context("read alpha_selector table")?;
+
+    let color_endpoint = if self.color_endpoints.count != 0 {
+      let color_endpoint_delta = codec.get_huffman().context("read color_endpoint table")?;
+      let color_endpoints = self.get_color_endpoints(input).context("decode color_endpoints")?;
+      Table::new(color_endpoint_delta, color_endpoints).into()
+    } else { None };
+
+    let color_selector = if self.color_selectors.count != 0 {
+      let color_selector_delta = codec.get_huffman().context("read color_selector table")?;
+      let color_selectors = self.get_color_selectors(input).context("decode color_selectors")?;
+      Table::new(color_selector_delta, color_selectors).into()
+    } else { None };
+
+    let alpha_endpoint = if self.alpha_endpoints.count != 0 {
+      let alpha_endpoint_delta = codec.get_huffman().context("read alpha_endpoint table")?;
+      let alpha_endpoints = self.get_alpha_endpoints(input).context("decode alpha_endpoints")?;
+      Table::new(alpha_endpoint_delta, alpha_endpoints).into()
+    } else { None };
+
+    let alpha_selector = if self.alpha_selectors.count != 0 {
+      let alpha_selector_delta = codec.get_huffman().context("read alpha_selector table")?;
+      let alpha_selectors = self.get_alpha_selectors(input).context("decode alpha_selectors")?;
+      Table::new(alpha_selector_delta, alpha_selectors).into()
+    } else { None };
+
     if !codec.is_complete() { bail!("extra bytes in codec") }
-    let color_endpoints = self.get_color_endpoints(input).context("decode color_endpoints")?;
-    let color_selectors = self.get_color_selectors(input).context("decode color_selectors")?;
-    let alpha_endpoints = self.get_alpha_endpoints(input).context("decode alpha_endpoints")?;
-    let alpha_selectors = self.get_alpha_selectors(input).context("decode alpha_selectors")?;
     Ok(Tables {
       chunk_encoding,
-      color_endpoint: Table::new(color_endpoint_delta, color_endpoints),
-      color_selector: Table::new(color_selector_delta, color_selectors),
-      alpha_endpoint: Table::new(alpha_endpoint_delta, alpha_endpoints),
-      alpha_selector: Table::new(alpha_selector_delta, alpha_selectors),
+      color_endpoint, color_selector,
+      alpha_endpoint, alpha_selector,
     })
   }
 
@@ -294,10 +309,25 @@ impl Header {
 pub struct Tables {
   pub chunk_encoding: Huffman,
 
-  pub color_endpoint: Table<(u16, u16)>,
-  pub color_selector: Table<[u8; 4]>,
-  pub alpha_endpoint: Table<(u8, u8)>,
-  pub alpha_selector: Table<[u8; 6]>,
+  pub color_endpoint: Option<Table<(u16, u16)>>,
+  pub color_selector: Option<Table<[u8; 4]>>,
+  pub alpha_endpoint: Option<Table<(u8, u8)>>,
+  pub alpha_selector: Option<Table<[u8; 6]>>,
+}
+
+impl Tables {
+  fn color_endpoint(&self) -> Result<&Table<(u16, u16)>, Error> {
+    self.color_endpoint.as_ref().ok_or_else(|| anyhow!("color_endpoint should present"))
+  }
+  fn color_selector(&self) -> Result<&Table<[u8; 4]>, Error> {
+    self.color_selector.as_ref().ok_or_else(|| anyhow!("color_selector should present"))
+  }
+  fn alpha_endpoint(&self) -> Result<&Table<(u8, u8)>, Error> {
+    self.alpha_endpoint.as_ref().ok_or_else(|| anyhow!("alpha_endpoint should present"))
+  }
+  fn alpha_selector(&self) -> Result<&Table<[u8; 6]>, Error> {
+    self.alpha_selector.as_ref().ok_or_else(|| anyhow!("alpha_selector should present"))
+  }
 }
 
 #[derive(Debug)]

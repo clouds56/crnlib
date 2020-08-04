@@ -81,10 +81,10 @@ impl Unpack for Dxt1 {
           let (tiles_count, tiles) = Self::next_tile_idx(codec, &tables.chunk_encoding, &mut tile_bits)?;
 
           for i in 0..tiles_count {
-            color_endpoints[i] = tables.color_endpoint.next(codec, &mut color_endpoint_index).context("read color_endpoint_delta")?;
+            color_endpoints[i] = tables.color_endpoint()?.next(codec, &mut color_endpoint_index).context("read color_endpoint_delta")?;
           }
           for (i, &tile) in tiles.iter().enumerate() {
-            let color_selector = tables.color_selector.next(codec, &mut color_selector_index).context("read color_selector_delta")?;
+            let color_selector = tables.color_selector()?.next(codec, &mut color_selector_index).context("read color_selector_delta")?;
 
             // println!("{:x?}", (delta0, delta1, alpha_selector_index, color_selector_index, tables.color_selectors[color_selector_index]));
             if !skip_x && !skip_y {
@@ -151,17 +151,17 @@ impl Unpack for Dxt5 {
           let (tiles_count, tiles) = Self::next_tile_idx(codec, &tables.chunk_encoding, &mut tile_bits)?;
 
           for i in 0..tiles_count {
-            alpha_endpoints[i] = tables.alpha_endpoint.next(codec, &mut alpha_endpoint_index).context("read alpha_endpoint_delta")?;
+            alpha_endpoints[i] = tables.alpha_endpoint()?.next(codec, &mut alpha_endpoint_index).context("read alpha_endpoint_delta")?;
           }
 
           for i in 0..tiles_count {
-            color_endpoints[i] = tables.color_endpoint.next(codec, &mut color_endpoint_index).context("read color_endpoint_delta")?;
+            color_endpoints[i] = tables.color_endpoint()?.next(codec, &mut color_endpoint_index).context("read color_endpoint_delta")?;
           }
 
           // println!("tile: {:x?}", tiles);
           for (i, &tile) in tiles.iter().enumerate() {
-            let alpha_selector = tables.alpha_selector.next(codec, &mut alpha_selector_index).context("read alpha_selector_delta")?;
-            let color_selector = tables.color_selector.next(codec, &mut color_selector_index).context("read color_selector_delta")?;
+            let alpha_selector = tables.alpha_selector()?.next(codec, &mut alpha_selector_index).context("read alpha_selector_delta")?;
+            let color_selector = tables.color_selector()?.next(codec, &mut color_selector_index).context("read color_selector_delta")?;
 
             // println!("{:x?}", (delta0, delta1, alpha_selector_index, color_selector_index, tables.color_selectors[color_selector_index]));
             if !skip_x && !skip_y {
@@ -225,10 +225,10 @@ impl Unpack for Dxt5A {
           let (tiles_count, tiles) = Self::next_tile_idx(codec, &tables.chunk_encoding, &mut tile_bits)?;
 
           for i in 0..tiles_count {
-            alpha_endpoints[i] = tables.alpha_endpoint.next(codec, &mut alpha_endpoint_index).context("read alpha_endpoint_delta")?;
+            alpha_endpoints[i] = tables.alpha_endpoint()?.next(codec, &mut alpha_endpoint_index).context("read alpha_endpoint_delta")?;
           }
           for (i, &tile) in tiles.iter().enumerate() {
-            let alpha_selector = tables.alpha_selector.next(codec, &mut alpha_selector_index).context("read alpha_selector_delta")?;
+            let alpha_selector = tables.alpha_selector()?.next(codec, &mut alpha_selector_index).context("read alpha_selector_delta")?;
 
             // println!("{:x?}", (delta0, delta1, alpha_selector_index, color_selector_index, tables.color_selectors[color_selector_index]));
             if !skip_x && !skip_y {
@@ -295,14 +295,14 @@ impl Unpack for Dxn {
           let (tiles_count, tiles) = Self::next_tile_idx(codec, &tables.chunk_encoding, &mut tile_bits)?;
 
           for i in 0..tiles_count {
-            alpha0_endpoints[i] = tables.alpha_endpoint.next(codec, &mut alpha0_endpoint_index).context("read alpha0_endpoint_delta")?;
+            alpha0_endpoints[i] = tables.alpha_endpoint()?.next(codec, &mut alpha0_endpoint_index).context("read alpha0_endpoint_delta")?;
           }
           for i in 0..tiles_count {
-            alpha1_endpoints[i] = tables.alpha_endpoint.next(codec, &mut alpha1_endpoint_index).context("read alpha1_endpoint_delta")?;
+            alpha1_endpoints[i] = tables.alpha_endpoint()?.next(codec, &mut alpha1_endpoint_index).context("read alpha1_endpoint_delta")?;
           }
           for (i, &tile) in tiles.iter().enumerate() {
-            let alpha0_selector = tables.alpha_selector.next(codec, &mut alpha0_selector_index).context("read alpha0_selector_delta")?;
-            let alpha1_selector = tables.alpha_selector.next(codec, &mut alpha1_selector_index).context("read alpha1_selector_delta")?;
+            let alpha0_selector = tables.alpha_selector()?.next(codec, &mut alpha0_selector_index).context("read alpha0_selector_delta")?;
+            let alpha1_selector = tables.alpha_selector()?.next(codec, &mut alpha1_selector_index).context("read alpha1_selector_delta")?;
 
             // println!("{:x?}", (delta0, delta1, alpha_selector_index, color_selector_index, tables.color_selectors[color_selector_index]));
             if !skip_x && !skip_y {
