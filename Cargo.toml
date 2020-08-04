@@ -1,6 +1,6 @@
 [package]
 name = "crnlib"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Clouds Flowing <clouds.flowing@gmail.com>"]
 edition = "2018"
 repository = "https://github.com/clouds56/crnlib/"

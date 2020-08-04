@@ -12,8 +12,8 @@ pub type Huffman = codec::Huffman<u32>;
 pub enum Format {
   Dxt1 = 0, Dxt3, Dxt5,
   Dxt5CCxY, Dxt5xGxR, Dxt5xGBR, Dxt5AGBR,
-  DxnXY, DxnYX,
-  Dxt5A, Etc1,
+  DxnXY /* A2XY */, DxnYX /* ATI2 */,
+  Dxt5A /* ATI1 */, Etc1,
   Invalid = 0xff,
 }
 impl Default for Format {
