@@ -5,7 +5,7 @@ use serde::{Serialize, Deserialize};
 use anyhow::*;
 use bincode::Options;
 
-type Huffman = codec::Huffman<u32>;
+pub type Huffman = codec::Huffman<u32>;
 
 #[derive(Debug, Copy, Clone, serde_repr::Serialize_repr, serde_repr::Deserialize_repr)]
 #[repr(u8)]
@@ -155,8 +155,10 @@ impl Header {
     let alpha_selectors = self.get_alpha_selectors(input).context("decode alpha_selectors")?;
     Ok(Tables {
       chunk_encoding,
-      color_endpoint_delta, color_selector_delta, alpha_endpoint_delta, alpha_selector_delta,
-      color_endpoints, color_selectors, alpha_endpoints, alpha_selectors,
+      color_endpoint: Table::new(color_endpoint_delta, color_endpoints),
+      color_selector: Table::new(color_selector_delta, color_selectors),
+      alpha_endpoint: Table::new(alpha_endpoint_delta, alpha_endpoints),
+      alpha_selector: Table::new(alpha_selector_delta, alpha_selectors),
     })
   }
 
@@ -297,15 +299,32 @@ impl Header {
 #[derive(Debug)]
 pub struct Tables {
   pub chunk_encoding: Huffman,
-  pub color_endpoint_delta: Huffman,
-  pub color_selector_delta: Huffman,
-  pub alpha_endpoint_delta: Huffman,
-  pub alpha_selector_delta: Huffman,
 
-  pub color_endpoints: Vec<(u16, u16)>,
-  pub color_selectors: Vec<[u8; 4]>,
-  pub alpha_endpoints: Vec<(u8, u8)>,
-  pub alpha_selectors: Vec<[u8; 6]>,
+  pub color_endpoint: Table<(u16, u16)>,
+  pub color_selector: Table<[u8; 4]>,
+  pub alpha_endpoint: Table<(u8, u8)>,
+  pub alpha_selector: Table<[u8; 6]>,
+}
+
+#[derive(Debug)]
+pub struct Table<T> {
+  pub delta: Huffman,
+  pub entries: Vec<T>,
+}
+
+impl<T: Copy> Table<T> {
+  fn new(delta: Huffman, entries: Vec<T>) -> Self {
+    Self { delta, entries }
+  }
+  #[inline]
+  fn truncate(idx: usize, max: usize) -> usize {
+    if idx < max { idx } else { idx-max }
+  }
+  pub fn next(&self, codec: &mut codec::Codec, idx: &mut usize) -> Result<T, Error> {
+    let delta = self.delta.next(codec)? as usize;
+    *idx = Self::truncate(*idx + delta, self.entries.len());
+    Ok(self.entries[*idx])
+  }
 }
 
 #[test]
