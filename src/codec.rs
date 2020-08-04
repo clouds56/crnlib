@@ -47,10 +47,7 @@ impl Codec<'_> {
     let symbol_count = self.read_bits(Huffman::<()>::MAX_SYMBOL_COUNT_BIT)? as u32;
     // println!("construct huffman tree with {} symbols", symbol_count);
     if symbol_count == 0 {
-      let mut depth = BTreeMap::new();
-      depth.insert(0, 1);
-      depth.insert(1, 1);
-      return Huffman::new(depth)
+      return Huffman::new(BTreeMap::new())
     }
     let mut tmp_symbol_depth = BTreeMap::new();
     let tmp_symbol_count = self.read_bits(5)? as usize;
@@ -147,7 +144,9 @@ impl<T: Ord+Copy> Huffman<T> {
       }
       depth_bound[depth] = available;
     }
-    ensure!(1<<max_depth == depth_bound[max_depth], "depth_bound error: {:?} {:?}", depth_count, depth_bound);
+    ensure!(
+      1<<max_depth == depth_bound[max_depth] || (max_depth <= 1 && depth_bound[max_depth] == max_depth as u32),
+      "depth_bound error: {:?} {:?}", depth_count, depth_bound);
     let mut depth_current = [0; Key::MAX_DEPTH+1];
     for i in 1..=Key::MAX_DEPTH {
       depth_current[i] = depth_bound[i-1]*2;
@@ -175,7 +174,7 @@ impl<T: Ord+Copy> Huffman<T> {
         return Ok(*sym)
       }
     }
-    unreachable!("complete huffman tree must match");
+    bail!("incomplete huffman tree no match");
   }
 }
 
@@ -200,4 +199,28 @@ impl Key {
 impl<T> Huffman<T> {
   pub const MAX_SYMBOL_COUNT: usize = 8192;
   pub const MAX_SYMBOL_COUNT_BIT: usize = 14;
+}
+
+#[test]
+fn test_huffman() {
+  let input = [0b0100_0000u8];
+  let mut codec = Codec::new(&input);
+  let huffman = Huffman::new(BTreeMap::<bool,_>::new()).expect("zero huffman");
+  assert!(huffman.next(&mut codec).is_err());
+
+  let mut codec = Codec::new(&input);
+  let mut depth = BTreeMap::new();
+  depth.insert(0xff, 1);
+  let huffman = Huffman::new(depth).expect("zero huffman");
+  assert_eq!(huffman.next(&mut codec).unwrap(), 0xff);
+  assert!(huffman.next(&mut codec).is_err());
+
+
+  let mut codec = Codec::new(&input);
+  let mut depth = BTreeMap::new();
+  depth.insert(0x01, 1);
+  depth.insert(0xff, 1);
+  let huffman = Huffman::new(depth).expect("zero huffman");
+  assert_eq!(huffman.next(&mut codec).unwrap(), 0x01);
+  assert_eq!(huffman.next(&mut codec).unwrap(), 0xff);
 }
