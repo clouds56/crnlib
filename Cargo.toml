@@ -3,6 +3,9 @@ name = "crnlib"
 version = "0.1.0"
 authors = ["Clouds Flowing <clouds.flowing@gmail.com>"]
 edition = "2018"
+repository = "https://github.com/clouds56/crnlib/"
+license-file = "license.txt"
+description = "Rust port of crunch, to decode .crn file"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
