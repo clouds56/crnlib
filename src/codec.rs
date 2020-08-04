@@ -44,7 +44,7 @@ impl Codec<'_> {
 
   pub fn get_huffman(&mut self) -> Result<Huffman<u32>, Error> {
     let symbol_count = self.read_bits(Huffman::<()>::MAX_SYMBOL_COUNT_BIT)? as u32;
-    println!("construct huffman tree with {} symbols", symbol_count);
+    // println!("construct huffman tree with {} symbols", symbol_count);
     if symbol_count == 0 {
       let mut depth = BTreeMap::new();
       depth.insert(0, 1);
