@@ -280,17 +280,11 @@ impl Header {
     let width = 1.max(self.width >> idx);
     let height = 1.max(self.height >> idx);
     match self.format {
-      Format::Dxt1 => unimplemented!("
-        unpack::Dxt1::unpack(tables, &mut codec, width, height, self.face_count)
-      "),
+      Format::Dxt1 => unpack::Dxt1::unpack(tables, &mut codec, width, height, self.face_count),
       Format::Dxt5 | Format::Dxt5AGBR | Format::Dxt5CCxY | Format::Dxt5xGBR | Format::Dxt5xGxR =>
         unpack::Dxt5::unpack(tables, &mut codec, width, height, self.face_count),
-      Format::Dxt5A => unimplemented!("
-        unpack::Dxt5A::unpack(tables, &mut codec, width, height, self.face_count)
-      "),
-      Format::DxnXY | Format::DxnYX => unimplemented!("
-        unpack::Dxn::unpack(tables, &mut codec, width, height, self.face_count)
-      "),
+      Format::Dxt5A => unpack::Dxt5A::unpack(tables, &mut codec, width, height, self.face_count),
+      Format::DxnXY | Format::DxnYX => unpack::Dxn::unpack(tables, &mut codec, width, height, self.face_count),
       Format::Dxt3 | Format::Etc1 | Format::Invalid => bail!("unsupported format {:?}", self.format),
     }
   }
@@ -350,7 +344,13 @@ fn test_file() {
   use image::ImageDecoder;
   let (width0, height0) = header.get_level_info(0).expect("get level info");
   assert_eq!((width0, height0), (header.width, header.height));
-  let decoder = image::dxt::DxtDecoder::new(std::io::Cursor::new(&level0), width0 as u32, height0 as u32, image::dxt::DXTVariant::DXT5).expect("new image");
+  let variant = match header.format {
+    Format::Dxt1 => image::dxt::DXTVariant::DXT1,
+    Format::Dxt3 => image::dxt::DXTVariant::DXT3,
+    Format::Dxt5 => image::dxt::DXTVariant::DXT5,
+    format => unimplemented!("image does not support format {:?}", format),
+  };
+  let decoder = image::dxt::DxtDecoder::new(std::io::Cursor::new(&level0), width0 as u32, height0 as u32, variant).expect("new image");
   let mut raw = vec![0; decoder.total_bytes() as usize];
   let color_type = decoder.color_type();
   decoder.read_image(&mut raw).expect("decode dxt");
