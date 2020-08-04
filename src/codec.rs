@@ -51,7 +51,8 @@ impl Codec<'_> {
     }
     let mut tmp_symbol_depth = BTreeMap::new();
     let tmp_symbol_count = self.read_bits(5)? as usize;
-    ensure!(tmp_symbol_count < Key::SHUFFLE.len(), anyhow!("symbol_size_count"));
+    ensure!(tmp_symbol_count <= Key::SHUFFLE.len(),
+      "tmp_symbol_count {} > {}", tmp_symbol_count, Key::SHUFFLE.len());
     for i in 0..tmp_symbol_count {
       let value = self.read_bits(3)? as usize;
       if value != 0 {
