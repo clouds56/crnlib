@@ -1,6 +1,8 @@
 crnlib
 ========
-This is a port from [crunch/crnlib](https://github.com/BinomialLLC/crunch), the license could be found at the end of file
+This is a port from [crunch/crnlib](https://github.com/BinomialLLC/crunch), the license could be found at the end of file.
+
+Feel free to open a issue about usage and/or features to make it better to use. Now (Jan 2021) it still works well for my specific usage.
 
 Usage
 ========
