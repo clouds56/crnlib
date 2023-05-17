@@ -1,5 +1,5 @@
 use std::io::prelude::*;
-use anyhow::*;
+use anyhow::{Error, Context, bail};
 use serde::{Serialize, Deserialize};
 use crate::{Tables, Huffman, codec::Codec};
 

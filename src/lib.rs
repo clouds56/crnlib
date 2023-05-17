@@ -1,8 +1,9 @@
 pub mod codec;
 pub mod unpack;
 
+use anyhow::{Context, Error, bail, anyhow};
 use serde::{Serialize, Deserialize};
-use anyhow::*;
+// use anyhow::*;
 use bincode::Options;
 
 pub type Huffman = codec::Huffman<u32>;
@@ -375,16 +376,16 @@ fn test_file() {
   let (width0, height0) = header.get_level_info(0).expect("get level info");
   assert_eq!((width0, height0), (header.width, header.height));
   let variant = match header.format {
-    Format::Dxt1 => image::dxt::DXTVariant::DXT1,
-    Format::Dxt3 => image::dxt::DXTVariant::DXT3,
-    Format::Dxt5 => image::dxt::DXTVariant::DXT5,
+    Format::Dxt1 => image::codecs::dxt::DxtVariant::DXT1,
+    Format::Dxt3 => image::codecs::dxt::DxtVariant::DXT3,
+    Format::Dxt5 => image::codecs::dxt::DxtVariant::DXT5,
     format => unimplemented!("image does not support format {:?}", format),
   };
-  let decoder = image::dxt::DxtDecoder::new(std::io::Cursor::new(&level0), width0 as u32, height0 as u32, variant).expect("new image");
+  let decoder = image::codecs::dxt::DxtDecoder::new(std::io::Cursor::new(&level0), width0 as u32, height0 as u32, variant).expect("new image");
   let mut raw = vec![0; decoder.total_bytes() as usize];
   let color_type = decoder.color_type();
   decoder.read_image(&mut raw).expect("decode dxt");
   let f = std::fs::File::create(std::path::Path::new(sample).with_extension("tga")).expect("create sample tga file");
-  let encoder = image::tga::TgaEncoder::new(f);
+  let encoder = image::codecs::tga::TgaEncoder::new(f);
   encoder.encode(&raw, width0 as u32, height0 as u32, color_type).expect("encode tga");
 }
