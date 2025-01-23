@@ -1,5 +1,6 @@
 /target
 Cargo.lock
-samples/
+/samples/*
+!/samples/*.crn
 .DS_Store
 .vscode/

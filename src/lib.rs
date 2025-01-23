@@ -355,7 +355,7 @@ impl<T: Copy> Table<T> {
 #[test]
 fn test_file() {
   use std::io::prelude::*;
-  let sample = "samples/test.crn";
+  let sample = "samples/logo.crn";
   assert_eq!(Header::fixed_size(), Header::serialize_option()
     .serialized_size(&Header::default()).expect("header size") as usize);
   let mut file = std::fs::File::open(sample).expect("open sample crn file");
@@ -369,7 +369,7 @@ fn test_file() {
   let tables = header.get_table(&buffer).expect("read table");
   println!("table: {:x?}", tables);
   let level0 = header.unpack_level(&tables, &buffer, 0).expect("unpack");
-  println!("{:02x?}", level0);
+  println!("{}x{} => {}", header.width, header.height, level0.len());
   header.unpack_level(&tables, &buffer, header.level_count as usize - 1).expect("unpack");
 
   use image::ImageDecoder;
@@ -381,11 +381,12 @@ fn test_file() {
     Format::Dxt5 => image::codecs::dxt::DxtVariant::DXT5,
     format => unimplemented!("image does not support format {:?}", format),
   };
-  let decoder = image::codecs::dxt::DxtDecoder::new(std::io::Cursor::new(&level0), width0 as u32, height0 as u32, variant).expect("new image");
+  fn stride_of(x: u16) -> u32 { ((x + 3) / 4 * 4) as _ }
+  let decoder = image::codecs::dxt::DxtDecoder::new(std::io::Cursor::new(&level0), stride_of(width0), stride_of(height0), variant).expect("new image");
   let mut raw = vec![0; decoder.total_bytes() as usize];
   let color_type = decoder.color_type();
   decoder.read_image(&mut raw).expect("decode dxt");
   let f = std::fs::File::create(std::path::Path::new(sample).with_extension("tga")).expect("create sample tga file");
   let encoder = image::codecs::tga::TgaEncoder::new(f);
-  encoder.encode(&raw, width0 as u32, height0 as u32, color_type).expect("encode tga");
+  encoder.encode(&raw, stride_of(width0), stride_of(height0), color_type).expect("encode tga");
 }
