@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use bitvec::{slice::BitSlice, order::Msb0, fields::BitField};
+use bitvec::{slice::BitSlice, store::BitStore, order::Msb0, fields::BitField};
 use anyhow::*;
 
 pub struct Codec<'a> {
@@ -11,21 +11,21 @@ impl Codec<'_> {
   pub fn new<'a>(input: &'a [u8]) -> Codec<'a> {
     Codec { buffer: BitSlice::from_slice(input), index: 0 }
   }
-  pub fn look_bits(&self, n: usize) -> u64 {
-    assert!(n <= 64);
-    if n == 0 { return 0 }
+  pub fn look_bits<T: BitStore>(&self, n: usize) -> T {
+    assert!(n <= T::BITS as usize);
+    if n == 0 { return T::FALSE }
     if self.index + n > self.buffer.len() {
-      self.buffer[self.index..].load_be::<u64>() << (self.index + n - self.buffer.len())
+      self.buffer[self.index..].load_be::<T>() << (self.index + n - self.buffer.len()) as u8
     } else {
       self.buffer[self.index..self.index+n].load_be()
     }
   }
-  pub fn read_bits(&mut self, n: usize) -> Result<u64, Error> {
-    assert!(n <= 64);
+  pub fn read_bits<T: BitStore>(&mut self, n: usize) -> Result<T, Error> {
+    assert!(n <= T::BITS as usize);
     if self.index + n > self.buffer.len() {
       bail!("read out of index {} < {}", self.index+n, self.buffer.len());
     }
-    if n == 0 { return Ok(0) }
+    if n == 0 { return Ok(T::FALSE) }
     let result = self.buffer[self.index..self.index+n].load_be();
     self.index += n;
     Ok(result)
@@ -44,17 +44,17 @@ impl Codec<'_> {
   }
 
   pub fn get_huffman(&mut self) -> Result<Huffman<u32>, Error> {
-    let symbol_count = self.read_bits(Huffman::<()>::MAX_SYMBOL_COUNT_BIT)? as u32;
+    let symbol_count = self.read_bits::<u32>(Huffman::<u32>::MAX_SYMBOL_COUNT_BIT)?;
     // println!("construct huffman tree with {} symbols", symbol_count);
     if symbol_count == 0 {
       return Huffman::new(BTreeMap::new())
     }
     let mut tmp_symbol_depth = BTreeMap::new();
-    let tmp_symbol_count = self.read_bits(5)? as usize;
+    let tmp_symbol_count = self.read_bits::<usize>(5)?;
     ensure!(tmp_symbol_count <= Key::SHUFFLE.len(),
       "tmp_symbol_count {} > {}", tmp_symbol_count, Key::SHUFFLE.len());
     for i in 0..tmp_symbol_count {
-      let value = self.read_bits(3)? as usize;
+      let value = self.read_bits::<usize>(3)?;
       if value != 0 {
         tmp_symbol_depth.insert(Key::SHUFFLE[i], value);
       }
@@ -66,11 +66,11 @@ impl Codec<'_> {
     let mut last = None;
     while i < symbol_count {
       let (len, d) = match key.next(self).context("get key content")? {
-        Depth(d) => (1, d),
-        ShortZero => (self.read_bits(3)? + 3, 0),
-        LongZero => (self.read_bits(7)? + 11, 0),
-        ShortRepeat => (self.read_bits(2)? + 3, last.ok_or_else(|| anyhow!("short repeat no last"))?),
-        LongRepeat => (self.read_bits(6)? + 7, last.ok_or_else(|| anyhow!("long repeat no last"))?),
+        Depth(d) => (1u32, d),
+        ShortZero => (self.read_bits::<u32>(3)? + 3, 0),
+        LongZero => (self.read_bits::<u32>(7)? + 11, 0),
+        ShortRepeat => (self.read_bits::<u32>(2)? + 3, last.ok_or_else(|| anyhow!("short repeat no last"))?),
+        LongRepeat => (self.read_bits::<u32>(6)? + 7, last.ok_or_else(|| anyhow!("long repeat no last"))?),
       };
       last = Some(d);
       for j in 0..len as u32 {
@@ -89,11 +89,11 @@ impl Codec<'_> {
 fn test_read_bits() {
   let input = [0b1100_1010u8, 0b0110_1101, 0b1101_1001];
   let mut codec = Codec::new(&input);
-  assert_eq!(codec.read_bits(3).unwrap(), 0b110);
+  assert_eq!(codec.read_bits::<u8>(3).unwrap(), 0b110);
   assert_eq!(codec.index, 3);
-  assert_eq!(codec.read_bits(17).unwrap(), 0b1010_0110_1101_1101);
+  assert_eq!(codec.read_bits::<u32>(17).unwrap(), 0b1010_0110_1101_1101);
   assert_eq!(codec.index, 20);
-  assert_eq!(codec.read_bits(0).unwrap(), 0);
+  assert_eq!(codec.read_bits::<u8>(0).unwrap(), 0);
   assert_eq!(codec.index, 20);
 
   assert_eq!(Huffman::<()>::MAX_SYMBOL_COUNT, 1 << (Huffman::<()>::MAX_SYMBOL_COUNT_BIT - 1));
@@ -164,12 +164,14 @@ impl<T: Ord+Copy> Huffman<T> {
       symbols, symbol_rev,
     })
   }
+}
 
+impl<T: Ord+Copy> Huffman<T> {
   pub fn next(&self, codec: &mut Codec<'_>) -> Result<T, Error> {
     ensure!(codec.current() < codec.len(), "stream end {} >= {}", codec.current(), codec.len());
-    let k = codec.look_bits(self.max_depth) as u32;
+    let k = codec.look_bits::<u32>(self.max_depth);
     for i in 1..=self.max_depth {
-      let t = k >> (self.max_depth - i);
+      let t = k >> (self.max_depth - i) as u8;
       if let Some(sym) = self.symbol_rev.get(&(i, t)) {
         codec.index += i;
         return Ok(*sym)
